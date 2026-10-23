@@ -19,6 +19,7 @@
 #include "mango/manage/misc.h"
 #include "mango/manage/monitor.h"
 #include "mango/manage/tab.h"
+#include "mango/manage/title-message-bar.h"
 #include "mango/manage/xwayland_primary.h"
 #include "mango/overview/overview.h"
 #include "mango/switcher/switcher.h"
@@ -29,6 +30,7 @@
 #include <scenefx/types/wlr_scene.h>
 #include <unistd.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
+#include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_color_management_v1.h>
 #include <wlr/types/wlr_color_representation_v1.h>
 #include <wlr/types/wlr_compositor.h>
@@ -67,6 +69,20 @@ struct wlr_surface *client_surface(Client *c) {
 		return c->surface.xwayland->surface;
 #endif
 	return c->surface.xdg->surface;
+}
+bool client_uses_transparent_rendering(Client *c) {
+	struct wlr_surface *surface = client_surface(c);
+	if (!surface) {
+		return false;
+	}
+
+	/* Client-requested wp_alpha_modifier_v1 state. */
+	if (wlr_alpha_modifier_v1_get_surface_state(surface) != NULL) {
+		return true;
+	}
+
+	/* Clients such as kitty render transparency directly into an alpha buffer. */
+	return surface->buffer && !wlr_buffer_is_opaque(&surface->buffer->base);
 }
 int32_t toplevel_from_wlr_surface(struct wlr_surface *s, Client **pc,
 								  LayerSurface **pl) {
@@ -2762,6 +2778,7 @@ void handle_client_set_title(struct wl_listener *listener, void *data) {
 	const char *title = client_get_title(c);
 	client_update_group_bar_title(c);
 	client_update_tab_bar_title(c);
+	title_message_bar_update_title(c);
 
 	struct wayland_string wayland_title;
 	const char *clamped_title = wayland_string_set(&wayland_title, title);
@@ -3647,15 +3664,13 @@ void show_scratchpad(Client *c) {
 		c->bw = c->no_border ? 0 : config.borderpx;
 	}
 
-	/* return if fullscreen */
 	if (!c->isfloating) {
 		client_set_floating(c, 1);
-		c->geom.width = c->iscustomsize
-							? c->float_geom.width
-							: c->mon->w.width * config.scratchpad_width_ratio;
-		c->geom.height =
-			c->iscustomsize ? c->float_geom.height
-							: c->mon->w.height * config.scratchpad_height_ratio;
+	}
+
+	if (!c->iscustomsize) {
+		c->geom.width = c->mon->w.width * config.scratchpad_width_ratio;
+		c->geom.height = c->mon->w.height * config.scratchpad_height_ratio;
 		// Recomputes the centered coordinates.
 		c->float_geom = c->geom = c->animainit_geom = c->animation.current =
 			client_center_geometry(c, c->mon, c->geom, 0, 0);

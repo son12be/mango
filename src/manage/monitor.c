@@ -20,6 +20,7 @@
 #include "mango/manage/client.h"
 #include "mango/manage/layer.h"
 #include "mango/manage/misc.h"
+#include "mango/manage/title-message-bar.h"
 #include "mango/manage/xwayland_primary.h"
 #include <fcntl.h>
 #include <scenefx/render/fx_renderer/fx_renderer.h>
@@ -864,6 +865,24 @@ void handle_output_destroy(struct wl_listener *listener, void *data) {
 
 	m->iscleanuping = true;
 
+	Client *c, *ctmp;
+	wl_list_for_each_safe(c, ctmp, &server.fadeout_clients, fadeout_link) {
+		if (c->mon != m) {
+			continue;
+		}
+		wl_list_remove(&c->fadeout_link);
+		wlr_scene_node_destroy(&c->scene->node);
+		free(c);
+	}
+	wl_list_for_each_safe(l, tmp, &server.fadeout_layers, fadeout_link) {
+		if (l->mon != m) {
+			continue;
+		}
+		wl_list_remove(&l->fadeout_link);
+		wlr_scene_node_destroy(&l->scene->node);
+		free(l);
+	}
+
 	/* m->layers[i] are intentionally not unlinked */
 	for (i = 0; i < LENGTH(m->layers); i++) {
 		wl_list_for_each_safe(l, tmp, &m->layers[i], link)
@@ -895,6 +914,7 @@ void handle_output_destroy(struct wl_listener *listener, void *data) {
 		wlr_scene_node_destroy(&m->special_dim_rect->node);
 		m->special_dim_rect = NULL;
 	}
+	title_message_bar_finish(m);
 	if (m->skip_frame_timeout) {
 		monitor_stop_skip_frame_timer(m);
 		wl_event_source_remove(m->skip_frame_timeout);
